@@ -44,6 +44,22 @@ function createEdgeMap(
   return result
 }
 
+// pSrc + t * vSrc = pTarget을 푼다
+function solveLineEquation(
+  pSrc: Matrix,
+  vSrc: Matrix,
+  pTarget: Matrix
+): number | undefined {
+  const t1 = (V.x(pTarget) - V.x(pSrc)) / V.x(vSrc)
+  const t2 = (V.y(pTarget) - V.y(pSrc)) / V.y(vSrc)
+
+  // 해 없음 (불능)
+  if (Number.isNaN(t1) || Number.isNaN(t2) || Math.abs(t1 - t2) > 1e-10)
+    return undefined
+
+  return t1
+}
+
 // 벡터 방정식을 풀어서 교점을 찾는다
 // e1.pSrc + tx * e1.vSrc = e2.pSrc + ty * e2.vSrc
 function isCrossed(e1: Edge, e2: Edge): boolean {
@@ -55,7 +71,13 @@ function isCrossed(e1: Edge, e2: Edge): boolean {
 
   // 평행
   if (Math.abs(math.det(directionMatrix)) === 0) {
-    return false
+    const tSrc = solveLineEquation(e1.pSrc, e1.vSrc, e2.pSrc)
+    const tDst = solveLineEquation(e1.pSrc, e1.vSrc, e2.pDst)
+
+    if (tSrc === undefined || tDst === undefined) return false
+
+    // 일치하면서 겹치는 경우
+    return tSrc * tDst < 0
   }
 
   // 교점 계산
