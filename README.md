@@ -1,10 +1,11 @@
-This is simple boilerplate for CSR only react project using typescript. Following features are installed and can be used without any settings.
+# Auto Finte State Machine
 
-- Typescript
-- React 17
-- Post CSS & CSS Module
-- Prettier
-- classnames
-- react-router-dom
+## Objective
 
-First you clone this, simply execute `npm install`. To open the dev server, execute `npm run dev`.
+- Find the best FSM for given labeled binary strings
+- Draw interactive graphs
+
+## Used Things
+
+- react-konva
+- math.js
