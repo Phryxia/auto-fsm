@@ -74,3 +74,7 @@ export function outer(a: Matrix, b: Matrix): number {
   const yb = y(b)
   return xa * yb - xb * ya
 }
+
+export function distance(a: Matrix, b: Matrix): number {
+  return len(sub(a, b))
+}

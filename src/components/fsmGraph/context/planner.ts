@@ -2,7 +2,15 @@ import * as V from '@src/utils/vector'
 import { Matrix, random } from 'mathjs'
 import * as math from 'mathjs'
 import { Charset, CHAR_LIST, FiniteStateMachine, StateKey } from '@src/model'
-import { argmin, array, MakeOptional, quantize } from '@src/utils'
+import {
+  argmin,
+  array,
+  isNear,
+  MakeOptional,
+  MIN_DISTANCE,
+  MIN_THR,
+  quantize,
+} from '@src/utils'
 import { CANVAS_HEIGHT, CANVAS_WIDTH, SIZE } from '../shared'
 import { FSMVisualState } from './types'
 
@@ -57,66 +65,78 @@ function solveLineEquation(
   // vSrc가 0벡터, 즉 점과 점만 준 경우.. 간선이 정상적으로 들어왔다면
   // 이 경우가 생기지 않아야 한다.
   if (Number.isNaN(t1) && Number.isNaN(t2)) {
-    if (V.len(V.sub(pTarget, pSrc)) < 1e-10) return 0
+    if (V.len(V.sub(pTarget, pSrc)) < MIN_DISTANCE) return 0
     return undefined
   }
 
   // vSrc.x가 0인 경우
   if (Number.isNaN(t1)) {
-    if (Math.abs(V.x(pTarget) - V.x(pSrc)) < 1e-10) return t2
+    if (isNear(V.x(pTarget), V.x(pSrc), MIN_DISTANCE)) return t2
     return undefined
   }
 
   // vSrc.y가 0인 경우
   if (Number.isNaN(t2)) {
-    if (Math.abs(V.y(pTarget) - V.y(pSrc)) < 1e-10) return t1
+    if (isNear(V.y(pTarget), V.y(pSrc), MIN_DISTANCE)) return t1
     return undefined
   }
 
-  if (Math.abs(t1 - t2) < 1e-10) return t1
+  if (isNear(t1, t2, MIN_THR)) return t1
   return undefined
 }
 
-// 벡터 방정식을 풀어서 교점을 찾는다
-// e1.pSrc + tx * e1.vSrc = e2.pSrc + ty * e2.vSrc
-export function isCrossed(e1: Edge, e2: Edge): boolean {
-  const directionMatrix = math.matrix([
-    [V.x(e1.vSrc), -V.x(e2.vSrc)],
-    [V.y(e1.vSrc), -V.y(e2.vSrc)],
-  ])
-  const constant = V.sub(e2.pSrc, e1.pSrc)
+// pSrc를 vSrc 방향으로 지나는 직선과 pTarget의 거리를 구한다
+// 오른쪽이면 양수 왼쪽이면 음수
+function lineDotDirection(
+  pSrc: Matrix,
+  vSrc: Matrix,
+  pTarget: Matrix
+): 1 | -1 | 0 {
+  if (V.len(vSrc) === 0)
+    throw Error('lineDotDirection: 0-length vector cannot be handled')
 
-  // 평행 or 일직선
-  if (Math.abs(math.det(directionMatrix)) < 1e-10) {
+  const distance = V.decompose(V.sub(pTarget, pSrc), vSrc)[1]
+
+  if (distance > MIN_DISTANCE) return 1
+  else if (distance < -MIN_DISTANCE) return -1
+  return 0
+}
+
+// 두 간선의 관계를 반환한다.
+// separated: 교점 없음
+// crossed: 교점이 한 개면서 시작점/끝점은 아님
+// degenerated: 그 이외. 시각적으로 문제를 일으키는 상태.
+export function getConnectionType(
+  e1: Edge,
+  e2: Edge
+): 'separated' | 'crossed' | 'degenerated' {
+  const toE1Src = lineDotDirection(e2.pSrc, e2.vSrc, e1.pSrc)
+  const toE1Dst = lineDotDirection(e2.pSrc, e2.vSrc, e1.pDst)
+  const toE2Src = lineDotDirection(e1.pSrc, e1.vSrc, e2.pSrc)
+  const toE2Dst = lineDotDirection(e1.pSrc, e1.vSrc, e2.pDst)
+
+  if (toE1Src * toE1Dst > 0 || toE2Src * toE2Dst > 0) return 'separated'
+
+  // 길이가 0인 간선을 주지 않으므로, 어느 한 쪽에서 둘 다 0거리가 나왔다는 것은
+  // 다른 한 쪽에서도 일직선이라는 뜻이다
+  if (toE1Src === 0 && toE1Dst === 0) {
     let tSrc = solveLineEquation(e1.pSrc, e1.vSrc, e2.pSrc)
     let tDst = solveLineEquation(e1.pSrc, e1.vSrc, e2.pDst)
-
     ;[tSrc, tDst] = [Math.min(tSrc, tDst), Math.max(tSrc, tDst)]
 
-    // 평행
-    if (tSrc === undefined || tDst === undefined) return false
-
-    // 일직선 상에 있는 경우
-    if (tSrc <= 0) {
-      return tDst > 0
-    }
-    return tSrc < 1
+    if (tDst <= 0 || tSrc >= 1) return 'separated'
+    return 'degenerated'
   }
 
-  // 교점 계산
-  const t = V.mul(math.inv(directionMatrix), constant)
-  const tx = V.x(t)
-  const ty = V.y(t)
+  // 한 점이 선분 위에 있는 케이스
+  if (toE1Src * toE1Dst === 0 || toE2Src * toE2Dst === 0) {
+    // 두 간선이 꼬리를 물고 있느 케이스
+    if (toE1Src * toE1Dst === 0 && toE2Src * toE2Dst === 0) return 'separated'
+    return 'degenerated'
+  }
 
-  // 교점이 선분 내에 있는지
-  // 만약 한 점은 선분 내에 있을 경우 겹친걸로 간주함
-  if (tx === 0 || tx === 1) {
-    return 0 < ty && ty < 1
-  }
-  if (ty === 0 || ty === 1) {
-    return 0 < tx && tx < 1
-  }
-  return 0 < tx && tx < 1 && 0 < ty && ty < 1
+  // 그 이외는 전부 교차
+  return 'crossed'
 }
 
 function createFeasiblePositions(pCenter: Matrix): Matrix[] {
@@ -154,10 +174,10 @@ function postProcessForPositions(positions: Matrix[]): Matrix[] {
 
   return positions.map((position) =>
     math.matrix([
-      Math.abs(maxX - minX) < 1e-10
+      isNear(maxX, minX, MIN_DISTANCE)
         ? CANVAS_WIDTH / 2
         : SIZE + (V.x(position) - minX) * xRate,
-      Math.abs(maxY - minY) < 1e-10
+      isNear(maxY, minY, MIN_DISTANCE)
         ? CANVAS_HEIGHT / 2
         : SIZE + (V.y(position) - minY) * yRate,
     ])
@@ -192,7 +212,13 @@ function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
       }
     })
     positions[state] = position
-    feasibleSamples = feasibleSamples.concat(createFeasiblePositions(position))
+    feasibleSamples = feasibleSamples.concat(
+      createFeasiblePositions(position).filter((feasible) =>
+        connectedStates.every(
+          (state) => V.len(V.sub(feasible, positions[state])) >= MIN_THR
+        )
+      )
+    )
   }
 
   // DFS
@@ -200,6 +226,8 @@ function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
     // 새로 연결할 정점 뽑기
     const currentState = stack.pop()
     if (positions[currentState]) continue
+
+    console.log('working on ' + currentState)
 
     // 2개까지는 아무데나 연결
     let selectedSample: Matrix
@@ -226,26 +254,40 @@ function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
           vSrc: V.sub(positions[neighbor], sample),
         }))
 
-        if (neighborEdges.some(({ vSrc }) => V.len(vSrc) < 1e-10)) {
-          return 1e10
-        }
+        let isDegenerated = neighborEdges.some(
+          ({ vSrc }) => V.len(vSrc) < MIN_THR
+        )
 
         // 뻗어나가는 것과 이미 있는 것들과 겹치는 경우
-        neighborEdges.forEach((newEdge) => {
-          connectedEdges.forEach((existedEdge) => {
-            if (isCrossed(newEdge, existedEdge)) {
-              crossCount += 1
-            }
+        if (!isDegenerated) {
+          neighborEdges.forEach((newEdge) => {
+            connectedEdges.forEach((existedEdge) => {
+              const type = getConnectionType(newEdge, existedEdge)
+              if (type === 'crossed') {
+                crossCount += 1
+              } else if (type === 'degenerated') {
+                isDegenerated = true
+              }
+            })
           })
-        })
+        }
 
         // 자기 자신에서 뻗어나가는 것들끼리 겹치는 경우
-        for (let i = 0; i < neighborEdges.length; ++i) {
-          for (let j = i + 1; j < neighborEdges.length; ++j) {
-            if (isCrossed(neighborEdges[i], neighborEdges[j])) {
-              crossCount += 1
+        if (!isDegenerated) {
+          for (let i = 0; i < neighborEdges.length; ++i) {
+            for (let j = i + 1; j < neighborEdges.length; ++j) {
+              const type = getConnectionType(neighborEdges[i], neighborEdges[j])
+              if (type === 'crossed') {
+                crossCount += 1
+              } else if (type === 'degenerated') {
+                isDegenerated = true
+              }
             }
           }
+        }
+
+        if (isDegenerated) {
+          return 1e10
         }
 
         const avgDist =
@@ -268,9 +310,9 @@ function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
     connectedStates.push(currentState)
 
     // 이웃으로 DFS 진행
-    CHAR_LIST.forEach((char) => {
-      const neighborState = fsm.transitions[currentState][char]
-      if (!positions[neighborState]) stack.push(neighborState)
+    edgeMap[currentState].forEach(({ src, dst }) => {
+      if (!positions[src]) stack.push(src)
+      if (!positions[dst]) stack.push(dst)
     })
   }
 

@@ -1,3 +1,4 @@
+import { SIZE } from '@src/components/fsmGraph/shared'
 import * as math from 'mathjs'
 import { Matrix } from 'mathjs'
 
@@ -72,4 +73,10 @@ export type MakeOptional<
 
 export function quantize(x: number, accuracy: number): number {
   return Math.floor(x / accuracy) * accuracy
+}
+
+export const MIN_THR = 1e-20
+export const MIN_DISTANCE = SIZE / 8
+export function isNear(x: number, y: number, e: number): boolean {
+  return Math.abs(x - y) < e
 }
