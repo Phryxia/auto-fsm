@@ -6,32 +6,18 @@ import React, {
   useRef,
 } from 'react'
 import * as math from 'mathjs'
-import { Matrix, xor } from 'mathjs'
+import { Matrix } from 'mathjs'
 import { Charset, FiniteStateMachine, StateKey } from '@src/model'
-import { array, random } from '@src/utils'
 import * as V from '@src/utils/vector'
 import {
-  CANVAS_WIDTH,
-  CANVAS_HEIGHT,
-  SIZE,
   getConnectPosition,
   getSelfControlPosition,
   convertToSelfOffset,
   getControlPosition,
   converToOffset,
-} from './shared/'
-
-interface FSMVisualState {
-  fsm: FiniteStateMachine
-  statePositions: Matrix[]
-  edgeProperties: Record<
-    Charset,
-    {
-      xOffset: number
-      yOffset: number
-    }
-  >[]
-}
+} from '../shared'
+import { FSMVisualState } from './types'
+import { createVisualState } from './planner'
 
 // @ts-ignore
 export const FSMContext = createContext<{
@@ -137,38 +123,6 @@ export const FSMProvider = ({
 
 export function useFSMVisual() {
   return useContext(FSMContext)
-}
-
-function createVisualState(fsm: FiniteStateMachine): FSMVisualState {
-  const states = array(fsm.numOfStates)
-
-  const statePositions = states.map(() =>
-    math.matrix([
-      random(SIZE, CANVAS_WIDTH - SIZE),
-      random(SIZE, CANVAS_HEIGHT - SIZE),
-    ])
-  )
-
-  const edgeProperties = states.map((sid: StateKey) => {
-    const result: Partial<
-      Record<Charset, { xOffset: number; yOffset: number }>
-    > = {}
-
-    ;['0', '1'].forEach((char: Charset) => {
-      result[char] = {
-        xOffset: 0,
-        yOffset: 0,
-      }
-    })
-
-    return result as Record<Charset, { xOffset: number; yOffset: number }>
-  })
-
-  return {
-    fsm,
-    statePositions,
-    edgeProperties,
-  }
 }
 
 function getEdgeDetailSelf(

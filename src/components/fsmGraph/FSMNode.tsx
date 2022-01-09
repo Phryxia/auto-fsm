@@ -3,7 +3,7 @@ import { StateKey } from '@src/model'
 import { Group, Circle, Text, Line } from 'react-konva'
 import Konva from 'konva'
 import { IDLE_FILL, IDLE_LINE, INIT_FILL, INIT_LINE, SIZE } from './shared/'
-import { useFSMVisual } from './FSMContext'
+import { useFSMVisual } from './context'
 import * as math from 'mathjs'
 
 interface FSMNodeProps {

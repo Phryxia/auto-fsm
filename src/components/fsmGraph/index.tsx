@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react'
-import { FiniteStateMachine } from '@src/model'
+import { CHAR_LIST, FiniteStateMachine } from '@src/model'
 import { array } from '@src/utils'
-import { Stage, Layer, Circle } from 'react-konva'
+import { Stage, Layer } from 'react-konva'
 import { FSMNode } from './FSMNode'
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from './shared/consts'
-import { FSMContext, FSMProvider } from './FSMContext'
+import { FSMProvider } from './context'
 import { FSMEdge } from './FSMEdge'
 
 interface FSMGraphProps {
@@ -28,8 +28,9 @@ export default function FSMGraph({ fsm }: FSMGraphProps) {
           ))}
           {states.map((id) => (
             <React.Fragment key={id}>
-              {<FSMEdge sid={id} char={'0'} />}
-              {<FSMEdge sid={id} char={'1'} />}
+              {CHAR_LIST.map((char) => (
+                <FSMEdge key={char} sid={id} char={char} />
+              ))}
             </React.Fragment>
           ))}
         </Layer>

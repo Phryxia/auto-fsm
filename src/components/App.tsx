@@ -1,30 +1,20 @@
 import React from 'react'
 import '@src/styles/global.css'
 import FSMGraph from './fsmGraph'
-import { FiniteStateMachine } from '@src/model'
+import { Charset, CHAR_LIST, FiniteStateMachine, StateKey } from '@src/model'
+import { array } from '@src/utils'
+import { randomInt } from 'mathjs'
 
+const N = 16
 const graph = new FiniteStateMachine(
-  4,
-  [
-    {
-      '0': 1,
-      '1': 0,
-    },
-    {
-      '0': 2,
-      '1': 3,
-    },
-    {
-      '0': 2,
-      '1': 3,
-    },
-    {
-      '0': 3,
-      '1': 1,
-    },
-  ],
+  N,
+  array(N).map(() => {
+    const result: Partial<Record<Charset, StateKey>> = {}
+    CHAR_LIST.forEach((char) => (result[char] = randomInt(N)))
+    return result as Record<Charset, StateKey>
+  }),
   0,
-  [1]
+  [0]
 )
 
 export default function App() {

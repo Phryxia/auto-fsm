@@ -1,8 +1,8 @@
 import { Charset, StateKey } from '@src/model'
 import * as V from '@src/utils/vector'
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react'
-import { Arrow, Circle, Group, Line } from 'react-konva'
-import { useFSMVisual } from './FSMContext'
+import React, { useEffect, useLayoutEffect, useState } from 'react'
+import { Arrow, Circle } from 'react-konva'
+import { useFSMVisual } from './context'
 import { IDLE_LINE, INIT_FILL } from './shared'
 
 interface FSMEdgeProps {
