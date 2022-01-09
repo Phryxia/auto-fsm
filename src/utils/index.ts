@@ -69,3 +69,7 @@ export type MakeOptional<
   T,
   Keys extends string | number | symbol
 > = Partial<T> & Omit<T, Keys>
+
+export function quantize(x: number, accuracy: number): number {
+  return Math.floor(x / accuracy) * accuracy
+}

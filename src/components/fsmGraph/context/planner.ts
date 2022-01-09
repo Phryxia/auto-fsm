@@ -2,7 +2,7 @@ import * as V from '@src/utils/vector'
 import { Matrix, random } from 'mathjs'
 import * as math from 'mathjs'
 import { Charset, CHAR_LIST, FiniteStateMachine, StateKey } from '@src/model'
-import { argmin, array, MakeOptional } from '@src/utils'
+import { argmin, array, MakeOptional, quantize } from '@src/utils'
 import { CANVAS_HEIGHT, CANVAS_WIDTH, SIZE } from '../shared'
 import { FSMVisualState } from './types'
 
@@ -45,6 +45,7 @@ function createEdgeMap(
 }
 
 // pSrc + t * vSrc = pTarget을 푼다
+// 없으면 undefiend 반환
 function solveLineEquation(
   pSrc: Matrix,
   vSrc: Matrix,
@@ -53,31 +54,53 @@ function solveLineEquation(
   const t1 = (V.x(pTarget) - V.x(pSrc)) / V.x(vSrc)
   const t2 = (V.y(pTarget) - V.y(pSrc)) / V.y(vSrc)
 
-  // 해 없음 (불능)
-  if (Number.isNaN(t1) || Number.isNaN(t2) || Math.abs(t1 - t2) > 1e-10)
+  // vSrc가 0벡터, 즉 점과 점만 준 경우.. 간선이 정상적으로 들어왔다면
+  // 이 경우가 생기지 않아야 한다.
+  if (Number.isNaN(t1) && Number.isNaN(t2)) {
+    if (V.len(V.sub(pTarget, pSrc)) < 1e-10) return 0
     return undefined
+  }
 
-  return t1
+  // vSrc.x가 0인 경우
+  if (Number.isNaN(t1)) {
+    if (Math.abs(V.x(pTarget) - V.x(pSrc)) < 1e-10) return t2
+    return undefined
+  }
+
+  // vSrc.y가 0인 경우
+  if (Number.isNaN(t2)) {
+    if (Math.abs(V.y(pTarget) - V.y(pSrc)) < 1e-10) return t1
+    return undefined
+  }
+
+  if (Math.abs(t1 - t2) < 1e-10) return t1
+  return undefined
 }
 
 // 벡터 방정식을 풀어서 교점을 찾는다
 // e1.pSrc + tx * e1.vSrc = e2.pSrc + ty * e2.vSrc
-function isCrossed(e1: Edge, e2: Edge): boolean {
+export function isCrossed(e1: Edge, e2: Edge): boolean {
   const directionMatrix = math.matrix([
     [V.x(e1.vSrc), -V.x(e2.vSrc)],
     [V.y(e1.vSrc), -V.y(e2.vSrc)],
   ])
   const constant = V.sub(e2.pSrc, e1.pSrc)
 
-  // 평행
-  if (Math.abs(math.det(directionMatrix)) === 0) {
-    const tSrc = solveLineEquation(e1.pSrc, e1.vSrc, e2.pSrc)
-    const tDst = solveLineEquation(e1.pSrc, e1.vSrc, e2.pDst)
+  // 평행 or 일직선
+  if (Math.abs(math.det(directionMatrix)) < 1e-10) {
+    let tSrc = solveLineEquation(e1.pSrc, e1.vSrc, e2.pSrc)
+    let tDst = solveLineEquation(e1.pSrc, e1.vSrc, e2.pDst)
 
+    ;[tSrc, tDst] = [Math.min(tSrc, tDst), Math.max(tSrc, tDst)]
+
+    // 평행
     if (tSrc === undefined || tDst === undefined) return false
 
-    // 일치하면서 겹치는 경우
-    return tSrc * tDst < 0
+    // 일직선 상에 있는 경우
+    if (tSrc <= 0) {
+      return tDst > 0
+    }
+    return tSrc < 1
   }
 
   // 교점 계산
@@ -86,14 +109,57 @@ function isCrossed(e1: Edge, e2: Edge): boolean {
   const ty = V.y(t)
 
   // 교점이 선분 내에 있는지
+  // 만약 한 점은 선분 내에 있을 경우 겹친걸로 간주함
+  if (tx === 0 || tx === 1) {
+    return 0 < ty && ty < 1
+  }
+  if (ty === 0 || ty === 1) {
+    return 0 < tx && tx < 1
+  }
   return 0 < tx && tx < 1 && 0 < ty && ty < 1
 }
 
-function createFeasiblePositions(numOfPositions: number): Matrix[] {
-  return array(numOfPositions).map(() =>
+function createFeasiblePositions(pCenter: Matrix): Matrix[] {
+  const period = 8
+  const orbit = 4
+  return array(orbit)
+    .map((oIndex) => {
+      return array(period).map((pIndex) => {
+        const u = V.unit((pIndex * Math.PI * 2) / period)
+        return V.add(V.mul(u, (oIndex + 1) * 2 * SIZE), pCenter)
+      })
+    })
+    .flat()
+}
+
+function postProcessForPositions(positions: Matrix[]): Matrix[] {
+  if (positions.length === 1)
+    return [math.matrix([CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2])]
+
+  positions = positions.map((position) => math.floor(position))
+
+  let minX = 1e10
+  let minY = 1e10
+  let maxX = -1e10
+  let maxY = -1e10
+  positions.forEach((position) => {
+    minX = Math.min(minX, V.x(position))
+    minY = Math.min(minY, V.y(position))
+    maxX = Math.max(maxX, V.x(position))
+    maxY = Math.max(maxY, V.y(position))
+  })
+
+  const xRate = (CANVAS_WIDTH - 2 * SIZE) / (maxX - minX)
+  const yRate = (CANVAS_HEIGHT - 2 * SIZE) / (maxY - minY)
+
+  return positions.map((position) =>
     math.matrix([
-      random(SIZE, CANVAS_WIDTH - SIZE),
-      random(SIZE, CANVAS_HEIGHT - SIZE),
+      Math.abs(maxX - minX) < 1e-10
+        ? CANVAS_WIDTH / 2
+        : SIZE + (V.x(position) - minX) * xRate,
+      Math.abs(maxY - minY) < 1e-10
+        ? CANVAS_HEIGHT / 2
+        : SIZE + (V.y(position) - minY) * yRate,
     ])
   )
 }
@@ -101,10 +167,11 @@ function createFeasiblePositions(numOfPositions: number): Matrix[] {
 // 정점들을 한 개씩 간선이 가장 덜 겹치는 지점으로 찍는다
 function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
   const positions: Matrix[] = []
-  const stack: StateKey[] = array(fsm.numOfStates)
+  const stack: StateKey[] = array(fsm.numOfStates).reverse()
   const edgeMap = createEdgeMap(fsm)
   const connectedStates: StateKey[] = []
   const connectedEdges: Edge[] = []
+  let feasibleSamples: Matrix[] = []
 
   // 정점 state의 위치를 확정한다
   function updatePosition(state: StateKey, position: Matrix): void {
@@ -125,6 +192,7 @@ function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
       }
     })
     positions[state] = position
+    feasibleSamples = feasibleSamples.concat(createFeasiblePositions(position))
   }
 
   // DFS
@@ -135,10 +203,9 @@ function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
 
     // 2개까지는 아무데나 연결
     let selectedSample: Matrix
-    if (connectedStates.length < 2) {
-      selectedSample = createFeasiblePositions(1)[0]
+    if (connectedStates.length === 0) {
+      selectedSample = math.matrix([0, 0])
     } else {
-      const samples = createFeasiblePositions(200)
       const neighbors = edgeMap[currentState]
         .map((edge) => {
           if (edge.src === currentState) return edge.dst
@@ -148,35 +215,50 @@ function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
 
       // 각 샘플에 대하여, 그 샘플로부터 연결되어야 하는 간선이
       // 기존 간선과 얼마나 겹치는지를 계산
-      // 또한 너무 기존 정점과 가까운지도 반영
-      selectedSample = argmin(samples, (sample) => {
+      selectedSample = argmin(feasibleSamples, (sample) => {
         let crossCount = 0
 
-        neighbors.forEach((neighbor) => {
-          const virtualEdge = {
-            src: neighbor,
-            dst: currentState,
-            pSrc: sample,
-            pDst: positions[neighbor],
-            vSrc: V.sub(positions[neighbor], sample),
-          }
+        const neighborEdges = neighbors.map((neighbor) => ({
+          src: neighbor,
+          dst: currentState,
+          pSrc: sample,
+          pDst: positions[neighbor],
+          vSrc: V.sub(positions[neighbor], sample),
+        }))
 
+        if (neighborEdges.some(({ vSrc }) => V.len(vSrc) < 1e-10)) {
+          return 1e10
+        }
+
+        // 뻗어나가는 것과 이미 있는 것들과 겹치는 경우
+        neighborEdges.forEach((newEdge) => {
           connectedEdges.forEach((existedEdge) => {
-            if (isCrossed(virtualEdge, existedEdge)) {
+            if (isCrossed(newEdge, existedEdge)) {
               crossCount += 1
             }
           })
         })
 
-        const minDist = positions.reduce(
-          (minDist, position) =>
-            Math.min(minDist, V.len(V.sub(sample, position))),
-          1e10
-        )
+        // 자기 자신에서 뻗어나가는 것들끼리 겹치는 경우
+        for (let i = 0; i < neighborEdges.length; ++i) {
+          for (let j = i + 1; j < neighborEdges.length; ++j) {
+            if (isCrossed(neighborEdges[i], neighborEdges[j])) {
+              crossCount += 1
+            }
+          }
+        }
 
-        return (
+        const avgDist =
+          neighbors.reduce(
+            (avgDist, neighbor) =>
+              avgDist + V.len(V.sub(sample, positions[neighbor])),
+            0
+          ) / neighbors.length
+
+        return quantize(
           crossCount +
-          (1 - minDist / Math.sqrt(CANVAS_WIDTH ** 2 + CANVAS_HEIGHT ** 2))
+            avgDist / Math.sqrt(CANVAS_WIDTH ** 2 + CANVAS_HEIGHT ** 2),
+          1e-5
         )
       }).element
     }
@@ -192,7 +274,7 @@ function computeStatePositions(fsm: FiniteStateMachine): Matrix[] {
     })
   }
 
-  return positions
+  return postProcessForPositions(positions)
 }
 
 export function createVisualState(fsm: FiniteStateMachine): FSMVisualState {
